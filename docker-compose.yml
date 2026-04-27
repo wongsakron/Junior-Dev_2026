@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    volumes:
+      # ใช้ Volume เพื่อเก็บข้อมูล SQLite Database ให้ยังคงอยู่แม้จะ Restart Container
+      - sqlite_data:/app/prisma
+
+volumes:
+  sqlite_data:
