@@ -49,3 +49,46 @@ AI Response: ผมได้สร้างไฟล์ Dockerfile, .dockerignor
 
 
 My Adjustment: เพิ่มคำสั่ง npx prisma generate เข้าไปในขั้นตอน builder ด้วย เพื่อให้ Prisma Client ถูกสร้างขึ้นมาใน Docker Container ไม่อย่างนั้นระบบจะเชื่อมต่อฐานข้อมูล SQLite ไม่ได้
+
+
+
+## Session 3: ออกแบบฐานข้อมูล
+Prompt:  ออกแบบฐานข้อมูล  แบบ ซีเนียร์ มีตาราง ลูกได้ PK FK ได้หมด ขอแค่ เหมาะ กับ ฟีเจอร์ระบบ ต่อยอดทั้งหมด
+โดยจะมีระบบ
+Login + Protected Routes
+Upload File (PDF, TXT)
+Chat with AI 
+Token Usage Counter 
+Streaming response 
+และส่วนเสริม
+Markdown rendering ในคำตอบ AI
+Citation (แสดงที่มาของคำตอบจากเอกสาร)
+Streaming response
+RAG with Vector DB (chunking + embedding + retrieval)
+Conversation history (save/load)
+Rate limiting / API key rotation
+Docker Compose + Healthcheck
+Unit tests (coverage ≥ 40%)
+
+AI Response : prisma/schema.prisma — Schema ฐานข้อมูลครบทุกตาราง
+src/lib/prisma.ts — Prisma Client Singleton (ป้องกัน connection leak ใน Next.js)
+prisma/dev.db — SQLite database ที่สร้างตารางเรียบร้อยแล้ว
+จะ commit แล้วไปต่อฟีเจอร์ Login เลยไหมครับ?
+
+My Adjustment: ก่อนไปฟีเจอร์ login ลองเทส Schema ด้วยข้อมูลตัวอย่างก่อน และลอง CRUD ฐานข้อมูลว่าใช้ได้จริง
+
+## Session 4: ลองเทส Schema ด้วยข้อมูลตัวอย่างก่อน
+
+Prompt: "ลองสร้างข้อมูลตัวอย่างและทดสอบ CRUD" 
+
+AI Response :   เป็นวิธีการทำงานแบบ Senior มากครับ! การเขียนเทสแบบนี้ (Proof of Concept) ก่อนเริ่มพัฒนาฟีเจอร์จริง จะช่วยให้เรามั่นใจว่าความสัมพันธ์ (Relations) ระหว่างตารางที่เราออกแบบไว้ทั้งหมด สามารถ Join เข้าด้วยกันได้อย่างสมบูรณ์
+
+ผมได้สร้างไฟล์ test-db.ts และเขียนโค้ดเพื่อทดสอบกระบวนการทั้งหมด (CRUD) ให้เรียบร้อย โดยครอบคลุมตั้งแต่:
+
+การสร้าง User ไปจนถึง Document, Conversation, Message และ Citation เชื่อมโยงกันทั้งหมด (Create)
+การ Join ตารางเพื่อดึงข้อมูลข้าม Relation (Read)
+การอัปเดตข้อมูล (Update)
+การทำงานของ onDelete: Cascade (เมื่อลบ User หนึ่งคน ข้อมูล Document และ Chat ของเขาควรจะหายไปทั้งหมดเพื่อไม่ให้รก Database) (Delete)
+และผมได้รันคำสั่งทดสอบให้แล้ว นี่คือผลลัพธ์จาก Terminal ครับ ทำงานได้สมบูรณ์แบบ 100% ลื่นไหลไม่มีสะดุด:
+
+My Adjustment:  โค้ดเทส ใช้งานได้จริง แล้วไปต่อที่ระบบ ล็อกอิน เลย 

@@ -1,13 +1,200 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// Knowledge Assistant - Database Schema
+// ออกแบบแบบ Senior-level: มี PK/FK ครบ, รองรับการต่อยอดทุกฟีเจอร์
 
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================
+// 1. User & Authentication
+// =============================================
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String   // bcrypt hashed
+  role      String   @default("user") // "user" | "admin"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  sessions      Session[]
+  documents     Document[]
+  conversations Conversation[]
+  tokenUsages   TokenUsage[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique // session token
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+}
+
+// =============================================
+// 2. Document & RAG Pipeline
+// =============================================
+
+model Document {
+  id           String   @id @default(cuid())
+  fileName     String   // ชื่อไฟล์ต้นฉบับ
+  fileType     String   // "pdf" | "txt"
+  fileSize     Int      // ขนาดไฟล์ (bytes)
+  storagePath  String   // path ที่เก็บไฟล์จริงบน server
+  status       String   @default("pending") // "pending" | "processing" | "ready" | "failed"
+  chunkCount   Int      @default(0) // จำนวน chunks ที่สร้างได้
+  userId       String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chunks                DocumentChunk[]
+  conversationDocuments ConversationDocument[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+model DocumentChunk {
+  id              String @id @default(cuid())
+  documentId      String
+  chunkIndex      Int    // ลำดับ chunk ในเอกสาร
+  content         String // เนื้อหาของ chunk (plain text)
+  chromaId        String @unique // ID ที่ใช้อ้างอิงใน ChromaDB (Vector DB)
+  startPage       Int?   // หน้าเริ่มต้น (สำหรับ PDF)
+  endPage         Int?   // หน้าสิ้นสุด (สำหรับ PDF)
+  tokenCount      Int    @default(0) // จำนวน token ใน chunk นี้
+
+  // Relations
+  document  Document   @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  citations Citation[]
+
+  @@unique([documentId, chunkIndex])
+  @@index([documentId])
+  @@index([chromaId])
+}
+
+// =============================================
+// 3. Conversation & Messages
+// =============================================
+
+model Conversation {
+  id        String   @id @default(cuid())
+  title     String   @default("New Chat") // ชื่อแชท (auto-generate จากข้อความแรก)
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  Message[]
+  documents ConversationDocument[]
+
+  @@index([userId])
+}
+
+// ตารางเชื่อม Many-to-Many: Conversation <-> Document
+// (1 แชทสามารถใช้หลายเอกสาร, 1 เอกสารสามารถถูกใช้ในหลายแชท)
+model ConversationDocument {
+  id             String @id @default(cuid())
+  conversationId String
+  documentId     String
+
+  // Relations
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  document     Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, documentId])
+  @@index([conversationId])
+  @@index([documentId])
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  role           String   // "user" | "assistant" | "system"
+  content        String   // เนื้อหาข้อความ (รองรับ Markdown)
+  promptTokens   Int      @default(0) // จำนวน token ที่ใช้ใน prompt
+  completionTokens Int    @default(0) // จำนวน token ที่ AI ตอบกลับ
+  model          String?  // model ที่ใช้ เช่น "gpt-4o-mini"
+  createdAt      DateTime @default(now())
+
+  // Relations
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  citations    Citation[]
+
+  @@index([conversationId])
+}
+
+// =============================================
+// 4. Citation (แสดงที่มาของคำตอบ)
+// =============================================
+
+model Citation {
+  id        String @id @default(cuid())
+  messageId String
+  chunkId   String
+  score     Float? // relevance score จาก vector search
+
+  // Relations
+  message Message       @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  chunk   DocumentChunk @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@index([chunkId])
+}
+
+// =============================================
+// 5. Token Usage Tracking (per session/user)
+// =============================================
+
+model TokenUsage {
+  id               String   @id @default(cuid())
+  userId           String
+  date             String   // YYYY-MM-DD format สำหรับ aggregate รายวัน
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  totalTokens      Int      @default(0)
+  requestCount     Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId])
+}
+
+// =============================================
+// 6. API Key Management (rotation & rate limiting)
+// =============================================
+
+model ApiKey {
+  id          String   @id @default(cuid())
+  name        String   // ชื่อ key เช่น "OpenAI Key #1"
+  keyHash     String   // hashed API key (ไม่เก็บ plaintext)
+  provider    String   @default("openai") // "openai" | "anthropic" etc.
+  isActive    Boolean  @default(true)
+  lastUsedAt  DateTime?
+  requestCount Int     @default(0)
+  dailyLimit  Int      @default(1000) // จำกัดจำนวนครั้งต่อวัน
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([provider, isActive])
 }
